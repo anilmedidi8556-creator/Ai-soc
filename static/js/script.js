@@ -1,188 +1,338 @@
-const API_BASE = '/api';
-const REFRESH_INTERVAL = 5000;
+// Constants
+const API_BASE_URL = 'http://127.0.0.1:5000/api';
 
-let trafficChartInstance = null;
-let threatPieChartInstance = null;
-
-const formatTimestamp = (isoStr) => new Date(isoStr).toLocaleString();
-
-const getSeverityBadge = (severity) => {
-    const s = severity.toLowerCase();
-    if (s === 'critical') return `<span class="badge badge-critical">CRITICAL</span>`;
-    if (s === 'high') return `<span class="badge badge-high">HIGH</span>`;
-    if (s === 'medium') return `<span class="badge badge-medium">MOD</span>`;
-    return `<span class="badge badge-low">LOW</span>`;
-};
-
-const getStatusColor = (status) => {
-    const s = status.toLowerCase();
-    if (s === 'blocked') return '<span class="text-red-400"><i class="fa-solid fa-ban text-xs mr-1"></i> Blocked</span>';
-    if (s === 'allowed') return '<span class="text-green-400"><i class="fa-solid fa-check text-xs mr-1"></i> Allowed</span>';
-    return '<span class="text-yellow-400"><i class="fa-solid fa-flag text-xs mr-1"></i> Flagged</span>';
-};
-
-const initCharts = () => {
-    const trafficCanvas = document.getElementById('trafficChart');
-    if (trafficCanvas) {
-        const trafficCtx = trafficCanvas.getContext('2d');
-        const gradientFill = trafficCtx.createLinearGradient(0, 0, 0, 400);
-        gradientFill.addColorStop(0, 'rgba(14, 165, 233, 0.4)');
-        gradientFill.addColorStop(1, 'rgba(14, 165, 233, 0.0)');
-
-        trafficChartInstance = new Chart(trafficCtx, {
-            type: 'line',
-            data: {
-                labels: ['10:00', '10:05', '10:10', '10:15', '10:20', '10:25'],
-                datasets: [{
-                    label: 'Traffic Flow',
-                    data: [120, 190, 85, 205, 140, 220],
-                    borderColor: '#0ea5e9',
-                    backgroundColor: gradientFill,
-                    borderWidth: 2,
-                    tension: 0.4,
-                    fill: true,
-                    pointBackgroundColor: '#0f172a',
-                    pointBorderColor: '#0ea5e9',
-                    pointRadius: 4,
-                    pointHoverRadius: 6
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
-                scales: {
-                    y: {
-                        grid: { color: 'rgba(255, 255, 255, 0.05)' },
-                        border: { dash: [5, 5] },
-                        ticks: { color: '#94a3b8' }
-                    },
-                    x: {
-                        grid: { display: false },
-                        ticks: { color: '#94a3b8' }
-                    }
-                },
-                animation: { duration: 0 }
-            }
-        });
-    }
-
-    const pieCanvas = document.getElementById('threatPieChart');
-    if (pieCanvas) {
-        const pieCtx = pieCanvas.getContext('2d');
-        threatPieChartInstance = new Chart(pieCtx, {
-            type: 'doughnut',
-            data: {
-                labels: ['Malware', 'Phishing', 'DDoS', 'Intrusion'],
-                datasets: [{
-                    data: [35, 25, 20, 20],
-                    backgroundColor: ['#ef4444', '#f59e0b', '#8b5cf6', '#0ea5e9'],
-                    borderWidth: 0,
-                    hoverOffset: 4
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                cutout: '75%',
-                plugins: {
-                    legend: {
-                        position: 'bottom',
-                        labels: { color: '#e2e8f0', padding: 20, boxWidth: 12, usePointStyle: true }
-                    }
-                },
-                animation: { duration: 0 }
-            }
-        });
-    }
-};
-
-const updateStatsUI = (stats) => {
-    if (!stats) return;
-    document.getElementById('statTotalEvents').textContent = stats.total_events.toLocaleString();
-    document.getElementById('statCriticalAlerts').textContent = stats.critical_alerts.toLocaleString();
-    document.getElementById('statActiveThreats').textContent = stats.active_threats.toLocaleString();
-    document.getElementById('statResolvedThreats').textContent = stats.resolved_threats.toLocaleString();
-};
-
-const updateLogsTableUI = (logs) => {
-    const tbody = document.getElementById('logsTableBody');
-    if (!logs || !logs.length) {
-        tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-gray-500">No events found.</td></tr>';
-        return;
-    }
-
-    const fragment = document.createDocumentFragment();
-    logs.slice(0, 15).forEach(log => {
-        const tr = document.createElement('tr');
-        if (log.severity.toLowerCase() === 'critical') {
-            tr.className = 'bg-red-900/10 border-l-[3px] border-l-red-500';
-        }
-        tr.innerHTML = `
-            <td class="p-3 font-mono text-xs text-gray-400 whitespace-nowrap">${formatTimestamp(log.timestamp)}</td>
-            <td class="p-3 font-mono text-sm">${log.source_ip || 'N/A'}</td>
-            <td class="p-3 font-mono text-sm text-gray-400">${log.destination_ip || 'N/A'}</td>
-            <td class="p-3 font-medium">${log.event_type || 'Unknown'}</td>
-            <td class="p-3">${getSeverityBadge(log.severity)}</td>
-            <td class="p-3">${getStatusColor(log.status)}</td>
-        `;
-        fragment.appendChild(tr);
-    });
-
-    tbody.innerHTML = '';
-    tbody.appendChild(fragment);
-};
-
-const fetchDashboardData = async () => {
-    try {
-        const [statsRes, logsRes] = await Promise.all([
-            fetch(`${API_BASE}/stats`),
-            fetch(`${API_BASE}/logs`)
-        ]);
-
-        if (statsRes.ok) updateStatsUI(await statsRes.json());
-        if (logsRes.ok) updateLogsTableUI(await logsRes.json());
-
-        if (trafficChartInstance) {
-            const data = trafficChartInstance.data.datasets[0].data;
-            data.shift();
-            data.push(Math.floor(Math.random() * 150) + 50);
-            trafficChartInstance.update();
-        }
-    } catch (error) {
-        console.error('Data Fetch Error:', error);
-    }
-};
-
-const startClock = () => {
-    const clockDisplay = document.getElementById('clockDisplay');
-    setInterval(() => {
-        clockDisplay.textContent = new Date().toLocaleTimeString('en-US', { hour12: false });
-    }, 1000);
-};
+// Initialize Charts
+let threatChart = null;
 
 document.addEventListener('DOMContentLoaded', () => {
-    initCharts();
-    startClock();
-    fetchDashboardData();
-    setInterval(fetchDashboardData, REFRESH_INTERVAL);
-
-    const toggleSidebarBtn = document.getElementById('toggleSidebarBtn');
-    const closeSidebarBtn = document.getElementById('closeSidebarBtn');
-    const sidebar = document.querySelector('.sidebar');
+    initDashboard();
     
-    if (toggleSidebarBtn && sidebar) {
-        toggleSidebarBtn.addEventListener('click', () => {
-            sidebar.classList.remove('hidden');
-            sidebar.classList.add('flex');
-            sidebar.style.zIndex = '50';
+    // Refresh button event listener
+    document.getElementById('refresh-btn').addEventListener('click', () => {
+        refreshData();
+    });
+    
+    // Auto-refresh every 30 seconds
+    setInterval(refreshData, 30000);
+});
+
+async function initDashboard() {
+    await fetchStats();
+    await fetchLogs();
+    await fetchAlerts();
+    initThreatChart();
+}
+
+async function refreshData() {
+    const refreshBtn = document.getElementById('refresh-btn');
+    refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
+    refreshBtn.disabled = true;
+    
+    try {
+        await Promise.all([
+            fetchStats(),
+            fetchLogs(),
+            fetchAlerts()
+        ]);
+        
+        // Update chart with some dummy movement for realism
+        updateChartData();
+        
+    } catch (error) {
+        console.error('Error refreshing data:', error);
+    } finally {
+        setTimeout(() => {
+            refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh Logs';
+            refreshBtn.disabled = false;
+        }, 500);
+    }
+}
+
+async function fetchStats() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/stats`);
+        const data = await response.json();
+        
+        document.getElementById('total-events').textContent = data.total_events.toLocaleString();
+        document.getElementById('critical-alerts').textContent = data.critical_alerts.toLocaleString();
+        document.getElementById('active-threats').textContent = data.active_threats.toLocaleString();
+        document.getElementById('resolved-threats').textContent = data.resolved_threats.toLocaleString();
+    } catch (error) {
+        console.error('Failed to fetch stats:', error);
+    }
+}
+
+async function fetchLogs() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/logs`);
+        const data = await response.json();
+        
+        renderLogsTable(data);
+    } catch (error) {
+        console.error('Failed to fetch logs:', error);
+    }
+}
+
+async function fetchAlerts() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/alerts`);
+        const data = await response.json();
+        
+        renderAlertsList(data);
+    } catch (error) {
+        console.error('Failed to fetch alerts:', error);
+    }
+}
+
+function renderLogsTable(logs) {
+    const tableBody = document.getElementById('logs-table-body');
+    tableBody.innerHTML = '';
+    
+    if (logs.length === 0) {
+        tableBody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-muted)">No logs available</td></tr>';
+        return;
+    }
+    
+    logs.forEach(log => {
+        const tr = document.createElement('tr');
+        
+        // Format time
+        const time = new Date(log.timestamp).toLocaleTimeString();
+        
+        // Get severity class
+        const severityClass = `severity-${log.severity}`;
+        
+        // Get status class
+        const statusClass = `status-${log.status}`;
+        
+        tr.innerHTML = `
+            <td class="monospaced">#${log.id}</td>
+            <td>${time}</td>
+            <td class="monospaced">${log.source_ip}</td>
+            <td class="monospaced">${log.destination_ip}</td>
+            <td>${log.event_type}</td>
+            <td><span class="severity-badge ${severityClass}">${log.severity}</span></td>
+            <td class="${statusClass}" style="text-transform: capitalize; font-weight: 600;">${log.status}</td>
+        `;
+        
+        tableBody.appendChild(tr);
+    });
+}
+
+function renderAlertsList(alerts) {
+    const alertsContainer = document.getElementById('alerts-container');
+    alertsContainer.innerHTML = '';
+    
+    if (alerts.length === 0) {
+        alertsContainer.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 20px;">No high or critical alerts</div>';
+        return;
+    }
+    
+    // Sort by timestamp descending
+    alerts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    
+    alerts.slice(0, 10).forEach(alert => {
+        const item = document.createElement('div');
+        item.className = `alert-item ${alert.severity}`;
+        
+        const time = new Date(alert.timestamp).toLocaleTimeString();
+        
+        item.innerHTML = `
+            <div class="alert-header">
+                <div class="alert-title">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    ${alert.event_type}
+                </div>
+                <div class="alert-time">${time}</div>
+            </div>
+            <div class="alert-details">
+                <strong>Source:</strong> <span class="monospaced">${alert.source_ip}</span> -> 
+                <strong>Target:</strong> <span class="monospaced">${alert.destination_ip}</span>
+                <br>
+                ${alert.description || ''}
+            </div>
+            <div class="alert-actions">
+                <button class="btn-small danger" onclick="blockIP('${alert.source_ip}')">
+                    <i class="fas fa-ban"></i> Block IP
+                </button>
+            </div>
+        `;
+        
+        alertsContainer.appendChild(item);
+    });
+}
+
+async function blockIP(ip) {
+    if (!confirm(`Are you sure you want to block IP address ${ip}?`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/block-ip`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ ip: ip })
         });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert(`Successfully blocked IP: ${ip}`);
+            // Force refresh to update stats/logs
+            refreshData();
+        } else {
+            alert(`Failed to block IP: ${result.message}`);
+        }
+    } catch (error) {
+        console.error('Error blocking IP:', error);
+        alert('An error occurred while communicating with the server.');
+    }
+}
+
+function initThreatChart() {
+    const ctx = document.getElementById('threatChart').getContext('2d');
+    
+    // Gradient for the chart
+    const gradientArea = ctx.createLinearGradient(0, 0, 0, 400);
+    gradientArea.addColorStop(0, 'rgba(0, 229, 255, 0.5)');
+    gradientArea.addColorStop(1, 'rgba(0, 229, 255, 0.0)');
+    
+    const gradientArea2 = ctx.createLinearGradient(0, 0, 0, 400);
+    gradientArea2.addColorStop(0, 'rgba(255, 0, 200, 0.5)');
+    gradientArea2.addColorStop(1, 'rgba(255, 0, 200, 0.0)');
+
+    // Generate times for labels
+    const labels = [];
+    let now = new Date();
+    for (let i = 11; i >= 0; i--) {
+        let t = new Date(now.getTime() - i * 5 * 60000);
+        labels.push(`${t.getHours().toString().padStart(2, '0')}:${t.getMinutes().toString().padStart(2, '0')}`);
     }
 
-    if (closeSidebarBtn && sidebar) {
-        closeSidebarBtn.addEventListener('click', () => {
-            sidebar.classList.add('hidden');
-            sidebar.classList.remove('flex');
-        });
+    threatChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'Network Traffic (Mbs)',
+                    data: [120, 132, 110, 150, 240, 210, 180, 260, 210, 190, 220, 180],
+                    borderColor: '#00e5ff',
+                    backgroundColor: gradientArea,
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.4,
+                    pointBackgroundColor: '#0f001a',
+                    pointBorderColor: '#00e5ff',
+                    pointBorderWidth: 2,
+                    pointRadius: 4,
+                    pointHoverRadius: 6
+                },
+                {
+                    label: 'Threat Alerts',
+                    data: [5, 12, 8, 45, 18, 10, 5, 8, 15, 25, 12, 5],
+                    borderColor: '#ff00c8',
+                    backgroundColor: gradientArea2,
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.4,
+                    pointBackgroundColor: '#0f001a',
+                    pointBorderColor: '#ff00c8',
+                    pointBorderWidth: 2,
+                    pointRadius: 4,
+                    pointHoverRadius: 6
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'top',
+                    labels: {
+                        color: '#e0e0e0',
+                        font: {
+                            family: 'Rajdhani',
+                            size: 14
+                        }
+                    }
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(15, 0, 26, 0.9)',
+                    titleColor: '#00e5ff',
+                    bodyColor: '#fff',
+                    borderColor: '#bd00ff',
+                    borderWidth: 1,
+                    padding: 10,
+                    titleFont: {
+                        family: 'Rajdhani',
+                        size: 14
+                    },
+                    bodyFont: {
+                        family: 'Rajdhani',
+                        size: 13
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    grid: {
+                        color: 'rgba(189, 0, 255, 0.1)',
+                        drawBorder: false
+                    },
+                    ticks: {
+                        color: '#9b72cf',
+                        font: {
+                            family: 'Rajdhani'
+                        }
+                    }
+                },
+                x: {
+                    grid: {
+                        color: 'rgba(189, 0, 255, 0.1)',
+                        drawBorder: false
+                    },
+                    ticks: {
+                        color: '#9b72cf',
+                        font: {
+                            family: 'Rajdhani'
+                        }
+                    }
+                }
+            },
+            interaction: {
+                intersect: false,
+                mode: 'index',
+            },
+        }
+    });
+}
+
+function updateChartData() {
+    if (!threatChart) return;
+    
+    const datasets = threatChart.data.datasets;
+    
+    // Shift data left
+    for (let j = 0; j < datasets.length; j++) {
+        const data = datasets[j].data;
+        for (let i = 0; i < data.length - 1; i++) {
+            data[i] = data[i + 1];
+        }
     }
-});
+    
+    // Add new random point
+    datasets[0].data[datasets[0].data.length - 1] = Math.floor(150 + Math.random() * 100);
+    datasets[1].data[datasets[1].data.length - 1] = Math.floor(5 + Math.random() * 30);
+    
+    // Update last label
+    const now = new Date();
+    threatChart.data.labels.shift();
+    threatChart.data.labels.push(`${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`);
+    
+    threatChart.update();
+}
