@@ -1,295 +1,185 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SOC Analyst Dashboard</title>
-    
-    <!-- CSS -->
-    <link rel="stylesheet" href="/static/css/style.css">
-    
-    <!-- Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
-    
-    <!-- Icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SOC Analyst Dashboard</title>
+  <meta name="description" content="Real-time Security Operations Center monitoring dashboard">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-    <div class="dashboard-container">
-        
-        <!-- Sidebar Navigation -->
-        <nav class="sidebar">
-            <div class="logo-area">
-                <h1>Cyber<span>SOC</span></h1>
-            </div>
-            <div class="nav-menu">
-                <a href="#" class="nav-item active" data-tab="tab-dashboard">
-                    <i class="fas fa-home"></i>
-                    <span class="desk-only">Dashboard</span>
-                </a>
-                <a href="#" class="nav-item" data-tab="tab-charts">
-                    <i class="fas fa-chart-line"></i>
-                    <span class="desk-only">Charts</span>
-                </a>
-                <a href="#" class="nav-item" data-tab="tab-apps">
-                    <i class="fas fa-shield-alt"></i>
-                    <span class="desk-only">Apps</span>
-                </a>
-                <a href="#" class="nav-item" data-tab="tab-forum">
-                    <i class="fas fa-comments"></i>
-                    <span class="desk-only">Forum</span>
-                </a>
-                <a href="#" class="nav-item" data-tab="tab-email">
-                    <i class="fas fa-envelope-open-text"></i>
-                    <span class="desk-only">Email</span>
-                </a>
-                <a href="#" class="nav-item" data-tab="tab-settings">
-                    <i class="fas fa-cog"></i>
-                    <span class="desk-only">Settings</span>
-                </a>
-            </div>
-            
-            <div class="mt-auto mb-6 px-4">
-                <a href="/logout" class="block text-center py-2 px-4 rounded-lg bg-[rgba(255,51,51,0.1)] border border-[var(--alert-red)] text-[var(--alert-red)] hover:bg-[var(--alert-red)] hover:text-white transition-colors uppercase tracking-wider text-sm font-bold">
-                    <i class="fas fa-power-off mr-2"></i> Logout
-                </a>
-            </div>
-        </nav>
 
-        <!-- Main Content Area -->
-        <main class="main-content">
-            
-            <!-- Top Navbar -->
-            <header class="top-navbar">
-                <div class="search-bar">
-                    <i class="fas fa-search"></i>
-                    <input type="text" id="search-input" placeholder="Search IP Address...">
-                    <button id="search-btn" class="text-[var(--highlight-cyan)] hover:text-white transition-colors ml-2"><i class="fas fa-arrow-right"></i></button>
-                </div>
-                
-                <div class="user-controls flex items-center gap-6">
-                    <button id="export-btn" class="btn bg-transparent border-[var(--highlight-green)] text-[var(--highlight-green)] hover:bg-[var(--highlight-green)] hover:text-black">
-                        <i class="fas fa-file-pdf"></i> Export Logs (PDF)
-                    </button>
-                    
-                    <button class="icon-btn" title="Notifications">
-                        <i class="fas fa-bell"></i>
-                        <span class="badge" id="notification-badge">3</span>
-                    </button>
-                    <div class="user-profile">
-                        <div class="avatar bg-[var(--highlight-pink)] text-white font-bold">{{ session.get('username', 'U')[0].upper() }}</div>
-                        <span class="desk-only" style="font-weight: 600; font-size: 14px;">{{ session.get('username', 'User') }}</span>
-                    </div>
-                </div>
-            </header>
-
-            <!-- Dashboard Body -->
-            <div class="dashboard-body">
-                
-                <!-- TAB: DASHBOARD -->
-                <div id="tab-dashboard" class="tab-content block">
-                    <!-- Header Stats -->
-                    <div class="flex justify-between items-center mb-6">
-                        <div>
-                            <h2 class="text-2xl font-bold text-white tracking-wide">Security Overview</h2>
-                            <p class="text-[#9b72cf] text-sm mt-1">Real-time threat monitoring and analysis</p>
-                        </div>
-                        <div>
-                            <button id="refresh-btn" class="btn primary shadow-lg shadow-[rgba(255,0,200,0.3)]">
-                                <i class="fas fa-sync-alt"></i> Refresh Logs
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Stats Grid -->
-                    <div class="stats-grid">
-                        <div class="stat-card blue">
-                            <div class="stat-icon"><i class="fas fa-globe"></i></div>
-                            <div class="stat-info">
-                                <h3>Total Incidents</h3>
-                                <div class="value" id="stats-incidents">...</div>
-                            </div>
-                        </div>
-                        
-                        <div class="stat-card red">
-                            <div class="stat-icon"><i class="fas fa-exclamation-circle"></i></div>
-                            <div class="stat-info">
-                                <h3>High/Critical Alerts</h3>
-                                <div class="value" id="stats-alerts">...</div>
-                            </div>
-                        </div>
-                        
-                        <div class="stat-card green">
-                            <div class="stat-icon"><i class="fas fa-ban"></i></div>
-                            <div class="stat-info">
-                                <h3>Blocked IPs</h3>
-                                <div class="value" id="stats-blocked-ips">...</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Middle Section: Main Chart and Alerts -->
-                    <div class="main-grid">
-                        <!-- Main Threat Timeline Chart -->
-                        <div class="panel">
-                            <div class="panel-header">
-                                <h2><i class="fas fa-chart-area"></i> Network Traffic vs Threats</h2>
-                            </div>
-                            <div class="chart-container">
-                                <canvas id="mainThreatChart"></canvas>
-                            </div>
-                        </div>
-                        
-                        <!-- Critical Alerts Panel -->
-                        <div class="panel flex flex-col h-full">
-                            <div class="panel-header">
-                                <h2><i class="fas fa-bell text-[var(--alert-red)]"></i> Critical Alerts</h2>
-                                <button class="btn-small p-1" onclick="fetchAlerts()"><i class="fas fa-sync"></i></button>
-                            </div>
-                            <div class="alerts-list flex-grow" id="alerts-container">
-                                <div class="text-center text-[#9b72cf] py-10">Loading alerts...</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Manual Log Analysis Section -->
-                    <div class="panel mb-10">
-                        <div class="panel-header">
-                            <h2><i class="fas fa-search-plus"></i> Advanced Threat Analysis</h2>
-                        </div>
-                        <div class="flex gap-4 flex-col lg:flex-row">
-                            <div class="lg:w-2/3 w-full">
-                                <textarea id="raw-log-input" class="w-full h-32 bg-[rgba(255,255,255,0.05)] border border-[var(--card-border)] rounded p-3 text-[var(--text-main)] outline-none focus:border-[var(--highlight-cyan)] transition-colors resize-none font-mono text-sm" placeholder="Paste raw log data here (e.g., firewall log, apache access log...)"></textarea>
-                                <button id="analyze-btn" class="btn primary mt-3" onclick="analyzeLog()"><i class="fas fa-robot"></i> Analyze Risk Factor</button>
-                            </div>
-                            <div class="lg:w-1/3 w-full bg-[rgba(0,0,0,0.2)] border border-[var(--card-border)] rounded p-4" id="analysis-result">
-                                <div class="text-[#9b72cf] text-center mt-8">Awaiting log input...</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Bottom Section: Logs Table -->
-                    <div class="panel mb-10">
-                        <div class="panel-header">
-                            <h2><i class="fas fa-list"></i> Activity Logs / Search Results</h2>
-                            <div class="flex gap-3">
-                                <button class="btn" onclick="fetchLogs()"><i class="fas fa-times"></i> Clear Search</button>
-                            </div>
-                        </div>
-                        
-                        <div class="logs-table-container">
-                            <table class="logs-table">
-                                <thead>
-                                    <tr>
-                                        <th>Timestamp</th>
-                                        <th>Source IP</th>
-                                        <th>Destination IP</th>
-                                        <th>Event Type</th>
-                                        <th>Severity</th>
-                                        <th>Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="logs-table-body">
-                                    <tr><td colspan="6" class="text-center text-[#9b72cf] py-6">Loading logs...</td></tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- TAB: CHARTS -->
-                <div id="tab-charts" class="tab-content hidden h-full">
-                    <div class="mb-6">
-                        <h2 class="text-2xl font-bold text-white tracking-wide">Threat Analytics</h2>
-                        <p class="text-[#9b72cf] text-sm mt-1">Detailed visual network metrics</p>
-                    </div>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pb-10">
-                        <div class="panel">
-                            <div class="panel-header"><h2><i class="fas fa-network-wired text-[var(--highlight-cyan)]"></i> Network Traffic</h2></div>
-                            <div class="chart-container"><canvas id="trafficChart"></canvas></div>
-                        </div>
-                        <div class="panel">
-                            <div class="panel-header"><h2><i class="fas fa-shield-virus text-[var(--highlight-pink)]"></i> Threat Activity Logs</h2></div>
-                            <div class="chart-container"><canvas id="threatActivityChart"></canvas></div>
-                        </div>
-                        <div class="panel md:col-span-2">
-                            <div class="panel-header"><h2><i class="fas fa-users-cog text-[var(--highlight-green)]"></i> Login Attempts over Time</h2></div>
-                            <div class="chart-container"><canvas id="loginAttemptsChart"></canvas></div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- TAB: APPS -->
-                <div id="tab-apps" class="tab-content hidden">
-                    <div class="panel h-96 flex justify-center items-center">
-                        <div class="text-center">
-                            <i class="fas fa-cube text-6xl text-[var(--highlight-cyan)] mb-4 opacity-50"></i>
-                            <h2 class="text-2xl text-white">Application Activity</h2>
-                            <p class="text-[#9b72cf] mt-2">Monitored organizational applications module is not active in demo mode.</p>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- TAB: FORUM -->
-                <div id="tab-forum" class="tab-content hidden">
-                    <div class="panel h-96 flex justify-center items-center">
-                        <div class="text-center">
-                            <i class="fas fa-comments text-6xl text-[var(--highlight-pink)] mb-4 opacity-50"></i>
-                            <h2 class="text-2xl text-white">Security Analyst Forum</h2>
-                            <p class="text-[#9b72cf] mt-2">Team discussion capabilities coming soon.</p>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- TAB: EMAIL -->
-                <div id="tab-email" class="tab-content hidden">
-                    <div class="panel h-96 flex justify-center items-center">
-                        <div class="text-center">
-                            <i class="fas fa-envelope-open-text text-6xl text-[var(--highlight-cyan)] mb-4 opacity-50"></i>
-                            <h2 class="text-2xl text-white">Email Alerts Inbox</h2>
-                            <p class="text-[#9b72cf] mt-2">Phishing intelligence integration required.</p>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- TAB: SETTINGS -->
-                <div id="tab-settings" class="tab-content hidden">
-                     <div class="panel max-w-2xl mx-auto mt-10">
-                        <div class="panel-header">
-                            <h2><i class="fas fa-cogs"></i> System Settings</h2>
-                        </div>
-                        <div class="space-y-6">
-                            <div>
-                                <label class="block text-sm text-[#9b72cf] uppercase mb-2">Automated Block Threshold <span class="text-[var(--text-main)] ml-2">(Current: Critical)</span></label>
-                                <input type="range" min="1" max="4" value="4" class="w-full cursor-pointer accent-[var(--highlight-cyan)]" disabled>
-                            </div>
-                            <div>
-                                <label class="block text-sm text-[#9b72cf] uppercase mb-2">Dark Cyber Theme Preference</label>
-                                <div class="bg-[rgba(255,255,255,0.05)] border border-[var(--highlight-cyan)] p-3 rounded text-center text-[var(--highlight-cyan)] cursor-not-allowed">
-                                    Enabled (Locked by SysAdmin)
-                                </div>
-                            </div>
-                            <div>
-                                <label class="block text-sm text-[#9b72cf] uppercase mb-2">API Connection Status</label>
-                                <div class="flex items-center gap-2 text-[var(--highlight-green)]">
-                                    <i class="fas fa-circle text-[8px] animate-pulse"></i> 127.0.0.1:5000 connected
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-            </div>
-        </main>
+  <!-- SIDEBAR -->
+  <nav class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-icon">🛡️</div>
+      <div>
+        <h2>SOC Panel</h2>
+        <span class="brand-sub">Security Ops Center</span>
+      </div>
     </div>
+    <ul class="sidebar-nav">
+      <li class="nav-item active" data-tab="dashboard"><i class="fas fa-th-large"></i><span>Dashboard</span></li>
+      <li class="nav-item" data-tab="logs"><i class="fas fa-scroll"></i><span>Live Logs</span></li>
+      <li class="nav-item" data-tab="alerts"><i class="fas fa-bell"></i><span>Alerts</span></li>
+      <li class="nav-item" data-tab="incidents"><i class="fas fa-exclamation-triangle"></i><span>Incidents</span></li>
+      <li class="nav-item" data-tab="search"><i class="fas fa-search"></i><span>IP Search</span></li>
+      <li class="nav-item" data-tab="block"><i class="fas fa-ban"></i><span>Block IP</span></li>
+    </ul>
+    <div class="sidebar-footer">
+      <div class="user-badge"><i class="fas fa-user-shield"></i><span>{{ user }}</span></div>
+      <a href="/logout" class="logout-btn" id="logout-btn"><i class="fas fa-sign-out-alt"></i> Logout</a>
+    </div>
+  </nav>
 
-    <!-- Scripts -->
-    <script src="/static/js/script.js"></script>
+  <!-- MAIN -->
+  <main class="main-content">
+    <header class="topbar">
+      <button class="menu-toggle" id="menu-toggle"><i class="fas fa-bars"></i></button>
+      <h1 class="page-title" id="page-title">Dashboard Overview</h1>
+      <div class="topbar-actions">
+        <button class="tb-btn tb-cyan" id="btn-refresh" title="Refresh"><i class="fas fa-sync-alt"></i> Refresh</button>
+        <button class="tb-btn tb-green" id="btn-add-log" title="Add Log"><i class="fas fa-plus"></i> Add Log</button>
+        <a href="/export/pdf" class="tb-btn tb-pink" id="btn-export-pdf" title="Export PDF"><i class="fas fa-file-pdf"></i> Export PDF</a>
+        <button class="tb-btn tb-red" id="btn-clear-logs" title="Clear Logs"><i class="fas fa-trash"></i> Clear</button>
+      </div>
+      <div class="topbar-right">
+        <div class="live-indicator"><span class="pulse-dot"></span><span>LIVE</span></div>
+        <span class="topbar-time" id="topbar-time"></span>
+      </div>
+    </header>
+
+    <!-- DASHBOARD -->
+    <section class="tab-content active" id="tab-dashboard">
+      <div class="stats-grid">
+        <div class="stat-card"><div class="stat-icon icon-cyan"><i class="fas fa-database"></i></div><div class="stat-info"><span class="stat-value" id="val-logs">0</span><span class="stat-label">Total Logs</span></div></div>
+        <div class="stat-card"><div class="stat-icon icon-pink"><i class="fas fa-bell"></i></div><div class="stat-info"><span class="stat-value" id="val-alerts">0</span><span class="stat-label">Active Alerts</span></div></div>
+        <div class="stat-card"><div class="stat-icon icon-green"><i class="fas fa-bug"></i></div><div class="stat-info"><span class="stat-value" id="val-incidents">0</span><span class="stat-label">Incidents</span></div></div>
+        <div class="stat-card"><div class="stat-icon icon-orange"><i class="fas fa-shield-alt"></i></div><div class="stat-info"><span class="stat-value" id="val-blocked">0</span><span class="stat-label">Blocked IPs</span></div></div>
+      </div>
+      <div class="charts-grid">
+        <div class="chart-card"><h3><i class="fas fa-network-wired"></i> Network Traffic</h3><div class="chart-wrap"><canvas id="chart-traffic"></canvas></div></div>
+        <div class="chart-card"><h3><i class="fas fa-skull-crossbones"></i> Threat Activity</h3><div class="chart-wrap"><canvas id="chart-threats"></canvas></div></div>
+        <div class="chart-card"><h3><i class="fas fa-key"></i> Login Attempts (SSH)</h3><div class="chart-wrap"><canvas id="chart-logins"></canvas></div></div>
+        <div class="chart-card"><h3><i class="fas fa-chart-line"></i> Incident Trend (7 Days)</h3><div class="chart-wrap"><canvas id="chart-trend"></canvas></div></div>
+      </div>
+      <div class="section-card">
+        <h3><i class="fas fa-exclamation-circle"></i> Recent Critical Alerts</h3>
+        <div class="table-wrap">
+          <table class="data-table"><thead><tr><th>Time</th><th>Source IP</th><th>Type</th><th>Severity</th><th>Message</th></tr></thead><tbody id="dashboard-alerts-body"></tbody></table>
+        </div>
+      </div>
+    </section>
+
+    <!-- LOGS -->
+    <section class="tab-content" id="tab-logs">
+      <div class="section-card">
+        <h3><i class="fas fa-scroll"></i> Live Security Logs <span class="badge-live">LIVE</span></h3>
+        <div class="table-wrap">
+          <table class="data-table"><thead><tr><th>ID</th><th>Timestamp</th><th>Source IP</th><th>Dest IP</th><th>Event</th><th>Severity</th><th>Tool</th><th>Port</th><th>Status</th></tr></thead><tbody id="logs-body"></tbody></table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ALERTS -->
+    <section class="tab-content" id="tab-alerts">
+      <div class="section-card">
+        <h3><i class="fas fa-bell"></i> Security Alerts (High / Critical)</h3>
+        <div class="table-wrap">
+          <table class="data-table"><thead><tr><th>ID</th><th>Timestamp</th><th>Source IP</th><th>Type</th><th>Severity</th><th>Message</th><th>Action</th></tr></thead><tbody id="alerts-body"></tbody></table>
+        </div>
+      </div>
+    </section>
+
+    <!-- INCIDENTS -->
+    <section class="tab-content" id="tab-incidents">
+      <div class="section-card">
+        <h3><i class="fas fa-exclamation-triangle"></i> Active Incidents</h3>
+        <div class="table-wrap">
+          <table class="data-table"><thead><tr><th>Incident ID</th><th>Source IP</th><th>Type</th><th>Severity</th><th>Count</th><th>First Seen</th><th>Last Seen</th><th>Status</th></tr></thead><tbody id="incidents-body"></tbody></table>
+        </div>
+      </div>
+    </section>
+
+    <!-- SEARCH -->
+    <section class="tab-content" id="tab-search">
+      <div class="section-card">
+        <h3><i class="fas fa-search"></i> IP Address Search</h3>
+        <div class="search-bar">
+          <input type="text" id="search-ip-input" placeholder="Enter IP address (e.g. 192.168.1.105)">
+          <button class="action-btn btn-cyan" id="search-ip-btn"><i class="fas fa-search"></i> Search</button>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table"><thead><tr><th>ID</th><th>Timestamp</th><th>Source IP</th><th>Dest IP</th><th>Event</th><th>Severity</th><th>Message</th></tr></thead><tbody id="search-body"></tbody></table>
+        </div>
+      </div>
+    </section>
+
+    <!-- BLOCK IP -->
+    <section class="tab-content" id="tab-block">
+      <div class="section-card">
+        <h3><i class="fas fa-ban"></i> Block Attacker IP</h3>
+        <div class="search-bar">
+          <input type="text" id="block-ip-input" placeholder="Enter IP address to block">
+          <button class="action-btn btn-red" id="block-ip-btn"><i class="fas fa-ban"></i> Block IP</button>
+        </div>
+        <div id="block-result" class="result-msg"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ADD LOG MODAL -->
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3><i class="fas fa-plus-circle"></i> Add New Log Entry</h3>
+        <button class="modal-close" id="modal-close"><i class="fas fa-times"></i></button>
+      </div>
+      <form id="add-log-form">
+        <div class="form-row">
+          <div class="form-group"><label for="log-source-ip">Source IP *</label><input type="text" id="log-source-ip" placeholder="192.168.1.10" required></div>
+          <div class="form-group"><label for="log-dest-ip">Destination IP</label><input type="text" id="log-dest-ip" placeholder="10.0.0.5"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label for="log-event-type">Event Type *</label>
+            <select id="log-event-type" required><option value="PORT_SCAN">Port Scan</option><option value="SSH_BRUTE_FORCE">SSH Brute Force</option><option value="MALWARE_DETECTED">Malware Detected</option><option value="SUSPICIOUS_TRAFFIC">Suspicious Traffic</option></select>
+          </div>
+          <div class="form-group"><label for="log-severity">Severity *</label>
+            <select id="log-severity" required><option value="low">Low</option><option value="medium">Medium</option><option value="high" selected>High</option><option value="critical">Critical</option></select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label for="log-port">Port</label><input type="number" id="log-port" value="22"></div>
+          <div class="form-group"><label for="log-status">Status</label>
+            <select id="log-status"><option value="open">Open</option><option value="filtered">Filtered</option><option value="closed">Closed</option><option value="blocked">Blocked</option></select>
+          </div>
+        </div>
+        <div class="form-group" style="width:100%"><label for="log-message">Message</label><input type="text" id="log-message" placeholder="Description of the event"></div>
+        <div class="modal-actions">
+          <button type="button" class="action-btn btn-dim" id="modal-cancel">Cancel</button>
+          <button type="submit" class="action-btn btn-cyan"><i class="fas fa-check"></i> Add Log</button>
+        </div>
+      </form>
+      <div id="add-log-result" class="result-msg" style="margin-top:12px"></div>
+    </div>
+  </div>
+
+  <!-- CONFIRM MODAL -->
+  <div class="modal-overlay" id="confirm-overlay">
+    <div class="modal-card" style="max-width:400px;text-align:center">
+      <h3 style="margin-bottom:16px"><i class="fas fa-exclamation-triangle" style="color:var(--red)"></i> Clear All Logs?</h3>
+      <p style="color:var(--text-dim);font-size:13px;margin-bottom:20px">This will permanently delete all your logs. This action cannot be undone.</p>
+      <div class="modal-actions" style="justify-content:center">
+        <button class="action-btn btn-dim" id="confirm-no">Cancel</button>
+        <button class="action-btn btn-red" id="confirm-yes"><i class="fas fa-trash"></i> Clear All</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/script.js"></script>
 </body>
 </html>

@@ -1,11 +1,20 @@
-{
-    "robbinhood@missmail.com": {
-        "password": "scrypt:32768:8:1$0nIQqZXK5i2g4cez$750df64cfced03f3758cbc056b944e76d97c12b83f15ed811213b04f386460369e443f148665bc063724297d1140c310e0af372ae3561629ddbd928fd194bc66"
-    },
-    "sai": {
-        "password": "scrypt:32768:8:1$IRtCZxtzvVyscQYn$f4cdc2219f93a3fdfb8d82cf999187d1ffc9bd2136612bec0c90f9cd4e7fc131ba83dd505a5bb828fd2b0ac65c927004fa883d50ac3289b542586cc4e244e30a"
-    },
-    "bruclee__uday": {
-        "password": "scrypt:32768:8:1$nFh3ish4PRRf1vTi$1bd045ccd3172df18629e24cb63c64125199adbbbfd4bbf5b624609c2ca08e4b78107109ec78db4f8c058292f090c46ef1573abb8633984d2808a4935006ad91"
-    }
-}
+[
+  {
+    "username": "admin",
+    "password": "scrypt:32768:8:1$xw4RFP3qG3EIV3r8$2c88207c770c90248068b8e2d84bd832c35e6fb74f630a21f2a47762dbc6f587c67936646788fe6a6ac7be0f99d57c646f708096491a18b9bf5e71a81ff9fb18",
+    "role": "analyst",
+    "created": "2026-03-31T10:32:01.497284"
+  },
+  {
+    "username": "test_pdf",
+    "password": "scrypt:32768:8:1$cE4DX4MDWtO2E0mQ$2b69432274acb34386fcb1d1d3ed7137980213b1e06c8c1d45a64eb0d1af14d64aa3bd616e50aa02b77d2a62e7ce4857c6d66585540bfabc8b653d8b757bd46a",
+    "role": "analyst",
+    "created": "2026-03-31T11:59:44.959884"
+  },
+  {
+    "username": "anil",
+    "password": "scrypt:32768:8:1$e9uKXThZzEx0AHBA$bb10d52b43d5e0a76d32d2c7d9973fb81fe722ab6b3402045775bfd0719d72e94098cfb3c9ac284c34dd2492686d96187062214103936d3907c36e9915494ded",
+    "role": "analyst",
+    "created": "2026-03-31T12:06:09.063925"
+  }
+]

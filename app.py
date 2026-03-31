@@ -1,283 +1,558 @@
+"""
+SOC Analyst Dashboard — Flask Backend
+Per-user log isolation, Kali log simulator, alert engine, PDF export.
+"""
+
 import json
 import os
 import random
-import datetime
-from flask import Flask, render_template, jsonify, request, session, redirect, url_for, send_file
-from flask_cors import CORS
+import re
+import threading
+from datetime import datetime, timedelta
+from functools import wraps
+from io import BytesIO
+
+from flask import (Flask, Response, jsonify, redirect, render_template,
+                   request, session, url_for)
 from fpdf import FPDF
-from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash
 
 app = Flask(__name__)
-# Crucial for session management:
-app.secret_key = 'super_secret_cyber_soc_key_123' 
-CORS(app)
+app.secret_key = "soc-dashboard-2026-secret-key"
 
-DATASET_PATH = os.path.join(os.path.dirname(__file__), 'datasets', 'logs.json')
-USERS_PATH = os.path.join(os.path.dirname(__file__), 'datasets', 'users.json')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATASETS_DIR = os.path.join(BASE_DIR, "datasets")
+USERS_FILE = os.path.join(DATASETS_DIR, "users.json")
+BLOCKED_IPS: dict[str, set] = {}  # per-user blocked IPs
 
-# Global state to simulate 'blocked' IPs for the live session
-BLOCKED_IPS = set()
+_lock = threading.Lock()
 
-def load_logs():
-    try:
-        with open(DATASET_PATH, 'r') as f:
-            return json.load(f)
-    except Exception as e:
-        print(f"Error loading logs: {e}")
-        return []
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
-def load_users():
-    if not os.path.exists(USERS_PATH):
-        return {}
-    try:
-        with open(USERS_PATH, 'r') as f:
-            return json.load(f)
-    except:
-        return {}
+def _safe_username(username):
+    """Sanitise username for use in filenames."""
+    return re.sub(r'[^a-zA-Z0-9_-]', '_', username)
 
-def save_users(users):
-    os.makedirs(os.path.dirname(USERS_PATH), exist_ok=True)
-    with open(USERS_PATH, 'w') as f:
-        json.dump(users, f, indent=4)
 
-# Custom decorator for login required
+def user_logs_path(username):
+    """Return the path to a user's personal log file."""
+    return os.path.join(DATASETS_DIR, f"logs_{_safe_username(username)}.json")
+
+
+def load_json(filepath):
+    with _lock:
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, list) else []
+        except (FileNotFoundError, json.JSONDecodeError):
+            return []
+
+
+def save_json(filepath, data):
+    with _lock:
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+
+
 def login_required(f):
-    from functools import wraps
     @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'logged_in' not in session:
-            return redirect(url_for('login'))
+    def decorated(*args, **kwargs):
+        if "user" not in session:
+            if request.path.startswith("/api/") or request.path.startswith("/export/"):
+                return jsonify({"error": "Unauthorized"}), 401
+            return redirect(url_for("login"))
         return f(*args, **kwargs)
-    return decorated_function
+    return decorated
 
-# --------------
-# HTML ROUTES
-# --------------
 
-@app.route('/')
-def index():
-    if 'logged_in' in session:
-        return redirect(url_for('dashboard'))
-    return redirect(url_for('login'))
+def current_user():
+    return session.get("user", "default")
 
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-        
-        users = load_users()
-        
-        # Check against users.json database
-        if username in users and check_password_hash(users[username]['password'], password):
-            session['logged_in'] = True
-            session['username'] = username
-            return redirect(url_for('dashboard'))
-        else:
-            return render_template('login.html', error="Invalid username or password")
-            
-    return render_template('login.html')
 
-@app.route('/register', methods=['GET', 'POST'])
+def get_blocked(username):
+    if username not in BLOCKED_IPS:
+        BLOCKED_IPS[username] = set()
+    return BLOCKED_IPS[username]
+
+
+def next_id(logs):
+    return max((l.get("id", 0) for l in logs), default=0) + 1
+
+
+# ---------------------------------------------------------------------------
+# Seed logs for new users
+# ---------------------------------------------------------------------------
+
+SEED_LOGS = [
+    {"event_type": "SSH_BRUTE_FORCE", "severity": "critical", "source_ip": "192.168.1.105",
+     "message": "Multiple failed SSH login attempts detected from 192.168.1.105 (23 attempts in 60s)",
+     "tool": "auth.log", "port": 22, "protocol": "TCP", "status": "open"},
+    {"event_type": "PORT_SCAN", "severity": "high", "source_ip": "10.10.14.33",
+     "message": "SYN port scan detected on ports 1-1024 from 10.10.14.33",
+     "tool": "nmap", "port": 445, "protocol": "TCP", "status": "filtered"},
+    {"event_type": "MALWARE_DETECTED", "severity": "critical", "source_ip": "172.16.0.88",
+     "message": "Reverse shell payload detected in network traffic from 172.16.0.88",
+     "tool": "wireshark", "port": 4444, "protocol": "TCP", "status": "open"},
+    {"event_type": "SUSPICIOUS_TRAFFIC", "severity": "medium", "source_ip": "192.168.1.200",
+     "message": "Unusual outbound DNS traffic to known C2 domain detected",
+     "tool": "tcpdump", "port": 53, "protocol": "UDP", "status": "open"},
+    {"event_type": "PORT_SCAN", "severity": "high", "source_ip": "10.10.14.55",
+     "message": "Aggressive nmap scan (-T4 -A) detected targeting web servers",
+     "tool": "nmap", "port": 80, "protocol": "TCP", "status": "open"},
+    {"event_type": "SSH_BRUTE_FORCE", "severity": "high", "source_ip": "192.168.1.150",
+     "message": "Failed SSH login attempts from 192.168.1.150 (12 attempts in 30s)",
+     "tool": "auth.log", "port": 22, "protocol": "TCP", "status": "open"},
+    {"event_type": "MALWARE_DETECTED", "severity": "critical", "source_ip": "203.0.113.42",
+     "message": "Metasploit meterpreter session detected on port 8080",
+     "tool": "snort", "port": 8080, "protocol": "TCP", "status": "open"},
+    {"event_type": "SUSPICIOUS_TRAFFIC", "severity": "medium", "source_ip": "10.10.14.77",
+     "message": "Data exfiltration attempt - large outbound transfer to external IP",
+     "tool": "wireshark", "port": 443, "protocol": "TCP", "status": "open"},
+    {"event_type": "SSH_BRUTE_FORCE", "severity": "high", "source_ip": "192.168.1.99",
+     "message": "Dictionary attack on SSH service from compromised internal host",
+     "tool": "auth.log", "port": 22, "protocol": "TCP", "status": "open"},
+    {"event_type": "MALWARE_DETECTED", "severity": "critical", "source_ip": "198.51.100.10",
+     "message": "Cobalt Strike beacon communication detected on port 50050",
+     "tool": "snort", "port": 50050, "protocol": "TCP", "status": "open"},
+    {"event_type": "SUSPICIOUS_TRAFFIC", "severity": "low", "source_ip": "192.168.1.180",
+     "message": "Unusual ICMP traffic pattern detected - possible ping sweep",
+     "tool": "tcpdump", "port": 0, "protocol": "ICMP", "status": "open"},
+    {"event_type": "PORT_SCAN", "severity": "high", "source_ip": "10.10.14.90",
+     "message": "Full TCP connect scan detected targeting all 65535 ports",
+     "tool": "nmap", "port": 8443, "protocol": "TCP", "status": "open"},
+    {"event_type": "MALWARE_DETECTED", "severity": "critical", "source_ip": "185.220.101.5",
+     "message": "Ransomware C2 callback detected - TOR exit node communication",
+     "tool": "snort", "port": 9001, "protocol": "TCP", "status": "open"},
+]
+
+DEST_IPS = [f"10.0.0.{i}" for i in range(1, 16)]
+
+
+def create_seed_logs():
+    """Generate timestamped seed logs for a new user."""
+    logs = []
+    base_time = datetime.now() - timedelta(hours=2)
+    for i, seed in enumerate(SEED_LOGS):
+        ts = base_time + timedelta(minutes=i * 3)
+        logs.append({
+            "id": i + 1,
+            "timestamp": ts.strftime("%Y-%m-%dT%H:%M:%S"),
+            "source_ip": seed["source_ip"],
+            "destination_ip": random.choice(DEST_IPS),
+            "event_type": seed["event_type"],
+            "severity": seed["severity"],
+            "message": seed["message"],
+            "tool": seed["tool"],
+            "port": seed["port"],
+            "protocol": seed["protocol"],
+            "status": seed["status"],
+        })
+    return logs
+
+
+# ---------------------------------------------------------------------------
+# Kali Linux Log Simulator
+# ---------------------------------------------------------------------------
+
+SUSPICIOUS_IPS = [
+    "10.10.14.33", "10.10.14.55", "10.10.14.77", "10.10.14.90",
+    "192.168.1.105", "192.168.1.150", "192.168.1.200", "192.168.1.99",
+    "203.0.113.42", "198.51.100.10", "185.220.101.5", "172.16.0.88",
+    "45.33.32.156", "91.121.87.10", "104.248.50.15",
+]
+
+KALI_TEMPLATES = [
+    {"event_type": "SSH_BRUTE_FORCE",
+     "message": "Multiple failed SSH login attempts from {ip} ({n} attempts in 60s)",
+     "tool": "auth.log", "port": 22, "protocol": "TCP"},
+    {"event_type": "PORT_SCAN",
+     "message": "SYN port scan detected on ports 1-1024 from {ip}",
+     "tool": "nmap", "port": 0, "protocol": "TCP"},
+    {"event_type": "MALWARE_DETECTED",
+     "message": "Reverse shell payload detected in traffic from {ip}",
+     "tool": "snort", "port": 4444, "protocol": "TCP"},
+    {"event_type": "SUSPICIOUS_TRAFFIC",
+     "message": "Unusual outbound traffic to known C2 domain from {ip}",
+     "tool": "tcpdump", "port": 53, "protocol": "TCP"},
+]
+
+
+def generate_random_log(logs):
+    t = random.choice(KALI_TEMPLATES)
+    ip = random.choice(SUSPICIOUS_IPS)
+    sev_map = {
+        "SSH_BRUTE_FORCE": random.choice(["high", "critical"]),
+        "PORT_SCAN": random.choice(["medium", "high"]),
+        "MALWARE_DETECTED": "critical",
+        "SUSPICIOUS_TRAFFIC": random.choice(["low", "medium"]),
+    }
+    port = t["port"] if t["port"] else random.choice([80, 443, 445, 3306, 8080, 8443])
+    return {
+        "id": next_id(logs),
+        "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+        "source_ip": ip,
+        "destination_ip": random.choice(DEST_IPS),
+        "event_type": t["event_type"],
+        "severity": sev_map.get(t["event_type"], "medium"),
+        "message": t["message"].format(ip=ip, n=random.randint(8, 50)),
+        "tool": t["tool"],
+        "port": port,
+        "protocol": t["protocol"],
+        "status": random.choice(["open", "filtered", "closed", "blocked"]),
+    }
+
+
+def maybe_inject(username):
+    """~30% chance to auto-insert a Kali-simulated log."""
+    if random.random() < 0.30:
+        path = user_logs_path(username)
+        logs = load_json(path)
+        logs.append(generate_random_log(logs))
+        if len(logs) > 500:
+            logs = logs[-500:]
+        save_json(path, logs)
+
+
+# ---------------------------------------------------------------------------
+# Alert & Incident Engine
+# ---------------------------------------------------------------------------
+
+def build_alerts(logs):
+    return [
+        {"id": l["id"], "timestamp": l["timestamp"], "source_ip": l["source_ip"],
+         "event_type": l["event_type"], "severity": l["severity"], "message": l["message"]}
+        for l in logs if l.get("severity") in ("high", "critical")
+    ]
+
+
+def build_incidents(logs, blocked):
+    groups = {}
+    for l in logs:
+        key = f"{l['source_ip']}|{l['event_type']}"
+        if key not in groups:
+            groups[key] = {
+                "incident_id": f"INC-{l['id']:04d}",
+                "source_ip": l["source_ip"],
+                "event_type": l["event_type"],
+                "severity": l["severity"],
+                "first_seen": l["timestamp"],
+                "last_seen": l["timestamp"],
+                "count": 0,
+                "blocked": l["source_ip"] in blocked,
+            }
+        groups[key]["last_seen"] = l["timestamp"]
+        groups[key]["count"] += 1
+        if groups[key]["count"] >= 5:
+            groups[key]["severity"] = "critical"
+    return sorted(groups.values(), key=lambda x: x["count"], reverse=True)
+
+
+def build_stats(logs, blocked):
+    sev = {"low": 0, "medium": 0, "high": 0, "critical": 0}
+    events = {}
+    hours = {}
+    dates = {}
+    login_ips = {}
+
+    for l in logs:
+        s = l.get("severity", "low")
+        sev[s] = sev.get(s, 0) + 1
+
+        et = l.get("event_type", "UNKNOWN")
+        events[et] = events.get(et, 0) + 1
+
+        ts = l.get("timestamp", "")
+        h = ts[11:13] if len(ts) >= 13 else "00"
+        hours[h] = hours.get(h, 0) + 1
+
+        d = ts[:10] if len(ts) >= 10 else "unknown"
+        dates[d] = dates.get(d, 0) + 1
+
+        if et == "SSH_BRUTE_FORCE":
+            src = l.get("source_ip", "?")
+            login_ips[src] = login_ips.get(src, 0) + 1
+
+    # Incident count = unique (ip, event_type) pairs with high/critical severity
+    inc_keys = set()
+    for l in logs:
+        if l.get("severity") in ("high", "critical"):
+            inc_keys.add(f"{l['source_ip']}|{l['event_type']}")
+
+    # Chart: Network Traffic (hourly)
+    h_sorted = sorted(hours.keys())
+    traffic = {"labels": [f"{h}:00" for h in h_sorted],
+               "data": [hours[h] for h in h_sorted]}
+
+    # Chart: Threat Activity (by event type)
+    threats = {"labels": list(events.keys()), "data": list(events.values())}
+
+    # Chart: Login Attempts (by IP, top 12)
+    login_sorted = sorted(login_ips.items(), key=lambda x: x[1], reverse=True)[:12]
+    logins = {"labels": [x[0] for x in login_sorted] or ["None"],
+              "data": [x[1] for x in login_sorted] or [0]}
+
+    # Chart: Incident Trend (last 7 days)
+    trend_labels, trend_data = [], []
+    for i in range(6, -1, -1):
+        day = datetime.now() - timedelta(days=i)
+        trend_labels.append(day.strftime("%b %d"))
+        trend_data.append(dates.get(day.strftime("%Y-%m-%d"), 0))
+
+    return {
+        "total_logs": len(logs),
+        "total_alerts": sev["high"] + sev["critical"],
+        "total_incidents": len(inc_keys),
+        "blocked_ips": len(blocked),
+        "severity": {"labels": list(sev.keys()), "data": list(sev.values())},
+        "threats": threats,
+        "traffic": traffic,
+        "login_attempts": logins,
+        "trend": {"labels": trend_labels, "data": trend_data},
+    }
+
+
+# ---------------------------------------------------------------------------
+# Auth Routes
+# ---------------------------------------------------------------------------
+
+@app.route("/register", methods=["GET", "POST"])
 def register():
-    if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-        confirm_password = request.form.get('confirm_password')
-        
-        if not username or not password or not confirm_password:
-            return render_template('register.html', error="All fields are required")
-            
-        if password != confirm_password:
-            return render_template('register.html', error="Passwords do not match")
-            
-        users = load_users()
-        if username in users:
-            return render_template('register.html', error="Username already exists")
-            
-        users[username] = {
-            "password": generate_password_hash(password)
-        }
-        save_users(users)
-        
-        return redirect(url_for('login'))
-        
-    return render_template('register.html')
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "").strip()
+        if not username or not password:
+            return render_template("register.html", error="All fields required.")
+        users = load_json(USERS_FILE)
+        if any(u["username"] == username for u in users):
+            return render_template("register.html", error="Username already exists.")
+        users.append({
+            "username": username,
+            "password": generate_password_hash(password),
+            "role": "analyst",
+            "created": datetime.now().isoformat(),
+        })
+        save_json(USERS_FILE, users)
 
-@app.route('/logout')
+        # Create personal log file with seed data
+        lpath = user_logs_path(username)
+        if not os.path.exists(lpath):
+            save_json(lpath, create_seed_logs())
+
+        return redirect(url_for("login"))
+    return render_template("register.html")
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "").strip()
+        users = load_json(USERS_FILE)
+        user = next((u for u in users if u["username"] == username), None)
+        if user and check_password_hash(user["password"], password):
+            session["user"] = username
+            session["role"] = user.get("role", "analyst")
+            # Ensure log file exists
+            lpath = user_logs_path(username)
+            if not os.path.exists(lpath):
+                save_json(lpath, create_seed_logs())
+            return redirect(url_for("dashboard"))
+        return render_template("login.html", error="Invalid credentials.")
+    return render_template("login.html")
+
+
+@app.route("/logout")
 def logout():
     session.clear()
-    return redirect(url_for('login'))
+    return redirect(url_for("login"))
 
-@app.route('/dashboard')
+
+# ---------------------------------------------------------------------------
+# Page Routes
+# ---------------------------------------------------------------------------
+
+@app.route("/")
 @login_required
 def dashboard():
-    return render_template('index.html')
+    return render_template("index.html", user=current_user())
 
 
-# --------------
-# API ROUTES
-# --------------
+# ---------------------------------------------------------------------------
+# API Endpoints
+# ---------------------------------------------------------------------------
 
-@app.route('/api/logs', methods=['GET'])
+@app.route("/api/logs")
 @login_required
 def api_logs():
-    logs = load_logs()
-    return jsonify(logs)
+    user = current_user()
+    maybe_inject(user)
+    return jsonify(load_json(user_logs_path(user)))
 
-@app.route('/api/search', methods=['GET'])
+
+@app.route("/api/search")
 @login_required
 def api_search():
-    ip = request.args.get('ip', '').strip()
-    logs = load_logs()
-    
-    if not ip:
-        return jsonify([])
-        
-    # Find logs where source_ip or destination_ip matches
-    results = [log for log in logs if ip in log.get('source_ip', '') or ip in log.get('destination_ip', '')]
-    return jsonify(results)
+    user = current_user()
+    ip = request.args.get("ip", "").strip()
+    logs = load_json(user_logs_path(user))
+    if ip:
+        logs = [l for l in logs if ip in l.get("source_ip", "") or ip in l.get("destination_ip", "")]
+    return jsonify(logs)
 
-@app.route('/api/alerts', methods=['GET'])
+
+@app.route("/api/alerts")
 @login_required
 def api_alerts():
-    logs = load_logs()
-    alerts = [log for log in logs if log.get('severity') in ['high', 'critical']]
-    return jsonify(alerts)
+    user = current_user()
+    maybe_inject(user)
+    return jsonify(build_alerts(load_json(user_logs_path(user))))
 
-@app.route('/api/stats', methods=['GET'])
+
+@app.route("/api/incidents")
+@login_required
+def api_incidents():
+    user = current_user()
+    return jsonify(build_incidents(load_json(user_logs_path(user)), get_blocked(user)))
+
+
+@app.route("/api/stats")
 @login_required
 def api_stats():
-    logs = load_logs()
-    
-    alerts_count = sum(1 for log in logs if log.get('severity') in ['high', 'critical'])
-    incidents_count = len(logs)
-    blocked_count = len(BLOCKED_IPS)
-    
-    # Generate some fake chart data points (Network Traffic and Alerts over time)
-    traffic_data = [random.randint(50, 250) for _ in range(12)]
-    alert_trend = [random.randint(0, 15) for _ in range(12)]
-    
-    labels = []
-    now = datetime.datetime.now()
-    for i in range(11, -1, -1):
-        t = now - datetime.timedelta(minutes=5 * i)
-        labels.append(t.strftime("%H:%M"))
-    
-    return jsonify({
-        "alerts": alerts_count,
-        "incidents": incidents_count,
-        "blocked_ips": blocked_count,
-        "chart_data": {
-            "labels": labels,
-            "traffic": traffic_data,
-            "alerts_trend": alert_trend
-        }
-    })
+    user = current_user()
+    maybe_inject(user)
+    return jsonify(build_stats(load_json(user_logs_path(user)), get_blocked(user)))
 
-@app.route('/api/block-ip', methods=['POST'])
+
+@app.route("/api/add-log", methods=["POST"])
 @login_required
-def block_ip():
-    data = request.json
-    ip_to_block = data.get('ip')
-    
-    if not ip_to_block:
-        return jsonify({"success": False, "message": "No IP provided"}), 400
-        
-    BLOCKED_IPS.add(ip_to_block)
-    return jsonify({"success": True, "message": f"IP {ip_to_block} blocked successfully"})
+def api_add_log():
+    user = current_user()
+    data = request.get_json(silent=True) or {}
+    source_ip = data.get("source_ip", "").strip()
+    event_type = data.get("event_type", "").strip()
+    if not source_ip or not event_type:
+        return jsonify({"error": "source_ip and event_type are required."}), 400
 
-@app.route('/api/analyze-log', methods=['POST'])
+    severity = data.get("severity", "medium").strip().lower()
+    if severity not in ("low", "medium", "high", "critical"):
+        severity = "medium"
+
+    path = user_logs_path(user)
+    logs = load_json(path)
+    entry = {
+        "id": next_id(logs),
+        "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+        "source_ip": source_ip,
+        "destination_ip": data.get("destination_ip", "10.0.0.1").strip() or "10.0.0.1",
+        "event_type": event_type,
+        "severity": severity,
+        "message": data.get("message", "").strip() or f"{event_type} from {source_ip}",
+        "tool": "manual",
+        "port": int(data.get("port", 0)),
+        "protocol": data.get("protocol", "TCP"),
+        "status": data.get("status", "open").strip().lower(),
+    }
+    logs.append(entry)
+    if len(logs) > 500:
+        logs = logs[-500:]
+    save_json(path, logs)
+    return jsonify({"success": True, "log": entry})
+
+
+@app.route("/api/block-ip", methods=["POST"])
 @login_required
-def analyze_log():
-    data = request.json
-    raw_log = data.get('log', '').lower()
-    
-    if not raw_log:
-        return jsonify({"success": False, "error": "No log provided"}), 400
-        
-    risk_factor = "Low"
-    score = 10
-    findings = []
-    
-    if "failed login" in raw_log or "incorrect password" in raw_log or "invalid user" in raw_log:
-        risk_factor = "Medium"
-        score += 30
-        findings.append("Detected authentication failure pattern.")
-        
-    if "sql" in raw_log or "select * from" in raw_log or "union" in raw_log or "1=1" in raw_log:
-        risk_factor = "Critical"
-        score += 80
-        findings.append("Possible SQL Injection attempt detected.")
-        
-    if "exe" in raw_log or "malware" in raw_log or "virus" in raw_log or "payload" in raw_log:
-        risk_factor = "High"
-        score += 60
-        findings.append("Suspicious payload or executable file signature mentioned.")
-        
-    if score > 80: risk_factor = "Critical"
-    elif score > 50: risk_factor = "High"
-    elif score > 20: risk_factor = "Medium"
-        
-    return jsonify({
-        "success": True,
-        "risk_factor": risk_factor,
-        "risk_score": min(score, 100),
-        "findings": findings,
-        "analysis_time": datetime.datetime.now().isoformat()
-    })
+def api_block_ip():
+    user = current_user()
+    data = request.get_json(silent=True) or {}
+    ip = data.get("ip", "").strip()
+    if not ip:
+        return jsonify({"error": "IP address required"}), 400
+    blocked = get_blocked(user)
+    blocked.add(ip)
+    return jsonify({"success": True, "message": f"IP {ip} blocked.", "blocked": list(blocked)})
 
-# --------------
-# EXPORT PDF
-# --------------
-@app.route('/export/pdf', methods=['GET'])
+
+@app.route("/api/clear-logs", methods=["POST"])
+@login_required
+def api_clear_logs():
+    user = current_user()
+    save_json(user_logs_path(user), [])
+    return jsonify({"success": True, "message": "All logs cleared."})
+
+
+# ---------------------------------------------------------------------------
+# PDF Export — Fixed: writes to BytesIO, sets correct headers
+# ---------------------------------------------------------------------------
+
+@app.route("/export/pdf")
 @login_required
 def export_pdf():
-    logs = load_logs()
-    
-    pdf = FPDF()
+    user = current_user()
+    logs = load_json(user_logs_path(user))
+
+    pdf = FPDF(orientation="L", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
-    pdf.set_font("Arial", size=10)
-    
-    pdf.cell(200, 10, txt="SOC Analyst Dashboard - Event Logs Report", ln=1, align='C')
-    pdf.cell(200, 10, txt=f"Generated on {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", ln=1, align='C')
-    pdf.ln(10)
-    
-    # Header
-    pdf.set_font("Arial", 'B', 9)
-    # Col widths: 30, 25, 25, 60, 25, 25 = 190
-    pdf.cell(35, 8, "Timestamp", border=1)
-    pdf.cell(30, 8, "Source IP", border=1)
-    pdf.cell(30, 8, "Destination IP", border=1)
-    pdf.cell(50, 8, "Event Type", border=1)
-    pdf.cell(20, 8, "Severity", border=1)
-    pdf.cell(25, 8, "Status", border=1)
+
+    # Title
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(0, 10, "SOC Analyst Dashboard - Log Report", ln=True, align="C")
+    pdf.set_font("Helvetica", "", 9)
+    pdf.cell(0, 6,
+             f"User: {user}   |   Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}   |   Total: {len(logs)}",
+             ln=True, align="C")
+    pdf.ln(6)
+
+    # Table header
+    headers = ["ID", "Timestamp", "Source IP", "Dest IP", "Event Type", "Severity", "Status"]
+    widths = [14, 42, 38, 32, 48, 22, 20]
+    pdf.set_font("Helvetica", "B", 8)
+    pdf.set_fill_color(30, 0, 60)
+    pdf.set_text_color(255, 255, 255)
+    for h, w in zip(headers, widths):
+        pdf.cell(w, 7, h, border=1, fill=True, align="C")
     pdf.ln()
-    
-    pdf.set_font("Arial", size=8)
-    
+
+    # Rows
+    pdf.set_font("Helvetica", "", 7)
+    pdf.set_text_color(0, 0, 0)
     for log in logs:
-        # Format time nicely
-        try:
-            dt = datetime.datetime.strptime(log.get('timestamp', ''), "%Y-%m-%dT%H:%M:%SZ")
-            time_str = dt.strftime("%Y-%m-%d %H:%M")
-        except:
-            time_str = log.get('timestamp', '')[:16]
-            
-        pdf.cell(35, 6, time_str, border=1)
-        pdf.cell(30, 6, log.get('source_ip', ''), border=1)
-        pdf.cell(30, 6, log.get('destination_ip', ''), border=1)
-        pdf.cell(50, 6, log.get('event_type', ''), border=1)
-        pdf.cell(20, 6, log.get('severity', ''), border=1)
-        pdf.cell(25, 6, log.get('status', ''), border=1)
+        vals = [
+            str(log.get("id", "")),
+            str(log.get("timestamp", "")),
+            str(log.get("source_ip", "")),
+            str(log.get("destination_ip", "")),
+            str(log.get("event_type", "")),
+            str(log.get("severity", "")),
+            str(log.get("status", "")),
+        ]
+        for v, w in zip(vals, widths):
+            pdf.cell(w, 6, v[:24], border=1, align="C")
         pdf.ln()
 
-    # Save to temp file
-    pdf_filename = "SOC_Logs_Report.pdf"
-    pdf_path = os.path.join(os.path.dirname(__file__), pdf_filename)
-    pdf.output(pdf_path)
-    
-    return send_file(pdf_path, as_attachment=True)
+    # Output to bytes buffer — no file on disk, no corruption
+    pdf_bytes = bytes(pdf.output())
 
-if __name__ == '__main__':
+    return Response(
+        pdf_bytes,
+        mimetype="application/pdf",
+        headers={
+            "Content-Type": "application/pdf",
+            "Content-Disposition": f"attachment; filename=SOC_Report_{_safe_username(user)}.pdf",
+            "Content-Length": str(len(pdf_bytes)),
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Run
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    os.makedirs(DATASETS_DIR, exist_ok=True)
+    if not os.path.exists(USERS_FILE):
+        save_json(USERS_FILE, [])
     app.run(debug=True, port=5000)

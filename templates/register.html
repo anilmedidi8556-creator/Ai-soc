@@ -1,99 +1,38 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CyberSOC - Register</title>
-    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="/static/css/style.css">
-    
-    <style>
-        .login-box {
-            background: rgba(15, 0, 26, 0.85);
-            backdrop-filter: blur(10px);
-            border: 1px solid var(--highlight-cyan);
-            border-radius: 15px;
-            box-shadow: 0 0 20px rgba(0, 229, 255, 0.2), inset 0 0 10px rgba(0, 229, 255, 0.1);
-        }
-        
-        .input-group input {
-            background: rgba(255, 255, 255, 0.05); /* Match login page */
-            border: 1px solid var(--card-border);
-            color: var(--text-main);
-            transition: all 0.3s ease;
-        }
-        
-        .input-group input:focus {
-            border-color: var(--highlight-pink);
-            box-shadow: 0 0 10px rgba(255, 0, 200, 0.3);
-            outline: none;
-        }
-        
-        .login-btn {
-            background: linear-gradient(90deg, rgba(0, 229, 255, 0.2), rgba(255, 0, 200, 0.2));
-            border: 1px solid var(--highlight-cyan);
-            color: var(--highlight-cyan);
-            transition: all 0.3s ease;
-        }
-        
-        .login-btn:hover {
-            background: linear-gradient(90deg, var(--highlight-cyan), var(--highlight-pink));
-            color: var(--bg-dark);
-            box-shadow: 0 0 15px rgba(0, 229, 255, 0.6);
-            border-color: transparent;
-        }
-    </style>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>SOC Dashboard — Register</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,#0f001a,#2b0052,#4b0082);min-height:100vh;display:flex;align-items:center;justify-content:center;color:#e0e0e0}
+    .c{background:rgba(30,0,51,.85);border:1px solid rgba(0,229,255,.15);border-radius:16px;padding:48px 40px;width:100%;max-width:420px;backdrop-filter:blur(20px);box-shadow:0 0 60px rgba(0,229,255,.08),0 20px 60px rgba(0,0,0,.5)}
+    .logo{text-align:center;margin-bottom:32px}
+    .logo .s{width:56px;height:56px;background:linear-gradient(135deg,#00e5ff,#ff00c8);border-radius:14px;display:inline-flex;align-items:center;justify-content:center;font-size:28px;margin-bottom:12px}
+    .logo h1{font-size:22px;font-weight:700;background:linear-gradient(90deg,#00e5ff,#ff00c8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+    .logo p{font-size:13px;color:#888;margin-top:4px}
+    .fg{margin-bottom:20px}
+    .fg label{display:block;font-size:13px;font-weight:500;color:#aaa;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
+    .fg input{width:100%;padding:12px 16px;background:rgba(255,255,255,.06);border:1px solid rgba(0,229,255,.2);border-radius:10px;color:#fff;font-size:15px;font-family:'Inter',sans-serif;outline:none;transition:.3s}
+    .fg input:focus{border-color:#00e5ff;box-shadow:0 0 12px rgba(0,229,255,.2)}
+    .btn{width:100%;padding:13px;background:linear-gradient(135deg,#00e5ff,#ff00c8);border:none;border-radius:10px;color:#fff;font-size:15px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:.2s;margin-top:8px}
+    .btn:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,229,255,.3)}
+    .ft{text-align:center;margin-top:24px;font-size:13px;color:#888}
+    .ft a{color:#00e5ff;text-decoration:none;font-weight:500}.ft a:hover{text-decoration:underline}
+    .err{background:rgba(255,0,80,.15);border:1px solid rgba(255,0,80,.3);color:#ff4d6d;padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:20px;text-align:center}
+  </style>
 </head>
-<body class="flex items-center justify-center min-h-screen">
-    
-    <div class="absolute inset-0 z-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
-    
-    <div class="login-box w-full max-w-md p-8 relative z-10 transition-transform transform hover:scale-[1.02] duration-300">
-        
-        <div class="text-center mb-8">
-            <h1 class="text-3xl font-bold uppercase tracking-widest text-[var(--highlight-cyan)] drop-shadow-[0_0_10px_rgba(0,229,255,0.5)]">
-                Cyber<span class="text-[var(--highlight-pink)]">SOC</span> <span class="text-white">Register</span>
-            </h1>
-            <p class="text-[#9b72cf] mt-2 text-sm tracking-wide">Create New Operator Profile</p>
-        </div>
-        
-        {% if error %}
-        <div class="bg-[rgba(255,51,51,0.1)] border border-[var(--alert-red)] text-[var(--alert-red)] p-3 rounded text-center mb-6 text-sm">
-            <i class="fas fa-exclamation-triangle mr-2"></i> {{ error }}
-        </div>
-        {% endif %}
-
-        <form action="{{ url_for('register') }}" method="POST" class="space-y-5">
-            <div class="input-group">
-                <label class="block text-[#9b72cf] text-sm uppercase tracking-wide mb-2"><i class="fas fa-user text-xs mr-1 text-[var(--highlight-cyan)]"></i> Username</label>
-                <input type="text" name="username" required placeholder="Choose operator ID" class="w-full px-4 py-3 rounded-lg font-mono text-sm">
-            </div>
-            
-            <div class="input-group">
-                <label class="block text-[#9b72cf] text-sm uppercase tracking-wide mb-2"><i class="fas fa-lock text-xs mr-1 text-[var(--highlight-pink)]"></i> Password</label>
-                <input type="password" name="password" required placeholder="••••••••" class="w-full px-4 py-3 rounded-lg font-mono tracking-widest text-sm">
-            </div>
-
-            <div class="input-group">
-                <label class="block text-[#9b72cf] text-sm uppercase tracking-wide mb-2"><i class="fas fa-shield-alt text-xs mr-1 text-[var(--highlight-green)]"></i> Confirm Password</label>
-                <input type="password" name="confirm_password" required placeholder="••••••••" class="w-full px-4 py-3 rounded-lg font-mono tracking-widest text-sm">
-            </div>
-            
-            <button type="submit" class="login-btn w-full py-3 rounded-lg font-bold tracking-wider uppercase drop-shadow-md mt-4">
-                <i class="fas fa-user-plus mr-2"></i> Register Account
-            </button>
-        </form>
-
-        <div class="mt-4 text-center">
-            <a href="{{ url_for('login') }}" class="text-[#9b72cf] text-sm hover:text-[var(--highlight-cyan)] transition-colors">Return to Login</a>
-        </div>
-        
-        <div class="mt-6 text-center border-t border-[rgba(189,0,255,0.2)] pt-4">
-            <p class="text-[10px] text-[#9b72cf] uppercase opacity-70">Unauthorized access prohibited. Monitored system.</p>
-        </div>
-    </div>
-    
+<body>
+  <div class="c">
+    <div class="logo"><div class="s">🛡️</div><h1>Create Account</h1><p>Join the Security Operations Center</p></div>
+    {% if error %}<div class="err">{{ error }}</div>{% endif %}
+    <form method="POST" action="/register">
+      <div class="fg"><label for="username">Username</label><input type="text" id="username" name="username" placeholder="Choose a username" required autocomplete="username"></div>
+      <div class="fg"><label for="password">Password</label><input type="password" id="password" name="password" placeholder="Create a password" required autocomplete="new-password"></div>
+      <button type="submit" class="btn" id="register-btn">Create Account</button>
+    </form>
+    <div class="ft">Already have an account? <a href="/login">Sign In</a></div>
+  </div>
 </body>
 </html>
